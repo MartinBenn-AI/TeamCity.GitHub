@@ -16,6 +16,7 @@
 
 package jetbrains.teamcilty.github.api;
 
+import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -61,7 +62,7 @@ public interface GitHubApi {
    * @throws IOException on communication error
    */
   @Nullable
-  String findPullRequestCommit(@NotNull String repoOwner,
+  PullRequestInfo findPullRequestCommit(@NotNull String repoOwner,
                                @NotNull String repoName,
                                @NotNull String branchName) throws IOException;
 

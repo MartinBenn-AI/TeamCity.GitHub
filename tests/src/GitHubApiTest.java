@@ -22,6 +22,7 @@ import jetbrains.teamcilty.github.api.GitHubChangeState;
 import jetbrains.teamcilty.github.api.impl.GitHubApiImpl;
 import jetbrains.teamcilty.github.api.impl.GitHubApiPaths;
 import jetbrains.teamcilty.github.api.impl.HttpClientWrapperImpl;
+import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
 import org.apache.http.auth.AuthenticationException;
 import org.jetbrains.annotations.NotNull;
 import org.testng.Assert;
@@ -120,14 +121,16 @@ public class GitHubApiTest extends BaseTestCase {
 
   @Test
   public void test_resolve_pull_request() throws IOException {
-    String hash = myApi.findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    PullRequestInfo pullRequestInfo = myApi.findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    String hash = pullRequestInfo.base.sha;
     System.out.println(hash);
     Assert.assertEquals(hash, "4e86fc6dcef23c733f36bc8bbf35fb292edc9cdb");
   }
 
   @Test
   public void test_resolve_pull_request_2() throws IOException {
-    String hash = myApi.findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/head");
+    PullRequestInfo pullRequestInfo = myApi.findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    String hash = pullRequestInfo.base.sha;
     System.out.println(hash);
     Assert.assertEquals(hash, "4e86fc6dcef23c733f36bc8bbf35fb292edc9cdb");
   }

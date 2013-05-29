@@ -126,7 +126,7 @@ public class GitHubApiImpl implements GitHubApi {
   }
 
   @Nullable
-  public String findPullRequestCommit(@NotNull String repoOwner,
+  public PullRequestInfo findPullRequestCommit(@NotNull String repoOwner,
                                       @NotNull String repoName,
                                       @NotNull String branchName) throws IOException {
 
@@ -152,9 +152,8 @@ public class GitHubApiImpl implements GitHubApi {
 
     final PullRequestInfo pullRequestInfo = processResponse(get, PullRequestInfo.class);
 
-    final RepoInfo head = pullRequestInfo.head;
-    if (head != null) {
-      return head.sha;
+    if (pullRequestInfo != null) {
+      return pullRequestInfo;
     }
     return null;
   }

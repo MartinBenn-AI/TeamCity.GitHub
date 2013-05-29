@@ -26,6 +26,7 @@ import jetbrains.buildServer.util.ExceptionUtil;
 import jetbrains.teamcilty.github.api.GitHubApi;
 import jetbrains.teamcilty.github.api.GitHubApiFactory;
 import jetbrains.teamcilty.github.api.GitHubChangeState;
+import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
 import jetbrains.teamcilty.github.ui.UpdateChangeStatusFeature;
 import jetbrains.teamcilty.github.ui.UpdateChangesConstants;
 import jetbrains.teamcilty.github.util.LoggerHelper;
@@ -107,7 +108,9 @@ public class ChangeStatusUpdater {
             final String vcsBranch = version.getVcsBranch();
             if (vcsBranch != null && api.isPullRequestMergeBranch(vcsBranch)) {
               try {
-                final String hash = api.findPullRequestCommit(repositoryOwner, repositoryName, vcsBranch);
+                final PullRequestInfo pullRequestInfo = api.findPullRequestCommit(repositoryOwner, repositoryName, vcsBranch);
+                final String hash = pullRequestInfo.head.sha;
+
                 if (hash == null) {
                   throw new IOException("Failed to find head hash for commit from " + vcsBranch);
                 }
