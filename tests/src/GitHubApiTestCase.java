@@ -22,6 +22,7 @@ import jetbrains.teamcilty.github.api.GitHubApi;
 import jetbrains.teamcilty.github.api.GitHubApiFactory;
 import jetbrains.teamcilty.github.api.GitHubChangeState;
 import jetbrains.teamcilty.github.api.impl.*;
+import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
 import org.apache.http.auth.AuthenticationException;
 import org.jetbrains.annotations.NotNull;
 import org.testng.Assert;
@@ -123,16 +124,26 @@ public abstract class GitHubApiTestCase extends BaseTestCase {
 
   @Test
   public void test_read_status() throws IOException {
-    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
-    assert hash != null;
+    String hash = getPullRequestCommit("refs/pull/1/merge");
+
     String change = getApi().readChangeStatus(myRepoOwner, myRepoName, hash);
     System.out.println(change);
   }
 
+  private String getPullRequestCommit(final String branchSpec) throws IOException {
+    PullRequestInfo requestInfo = getApi().findPullRequestCommit(myRepoOwner, myRepoName, branchSpec);
+
+    assert requestInfo != null;
+    assert requestInfo.head != null;
+    assert requestInfo.head.sha != null;
+
+    return requestInfo.head.sha;
+  }
+
   @Test
   public void test_set_status() throws IOException, AuthenticationException {
-    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
-    assert hash != null;
+    String hash = getPullRequestCommit("refs/pull/1/merge");
+
     getApi().setChangeStatus(myRepoOwner, myRepoName, hash,
             GitHubChangeState.Pending,
             "http://teamcity.jetbrains.com",
@@ -142,8 +153,8 @@ public abstract class GitHubApiTestCase extends BaseTestCase {
 
   @Test
   public void test_set_longer_status() throws IOException, AuthenticationException {
-    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
-    assert hash != null;
+    String hash = getPullRequestCommit("refs/pull/1/merge");
+
     getApi().setChangeStatus(myRepoOwner, myRepoName, hash,
             GitHubChangeState.Pending,
             "http://teamcity.jetbrains.com",
@@ -153,14 +164,14 @@ public abstract class GitHubApiTestCase extends BaseTestCase {
 
   @Test
   public void test_resolve_pull_request() throws IOException {
-    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    String hash = getPullRequestCommit("refs/pull/1/merge");
     System.out.println(hash);
     Assert.assertEquals(hash, myPrCommit);
   }
 
   @Test
   public void test_resolve_pull_request_2() throws IOException {
-    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/head");
+    String hash = getPullRequestCommit("refs/pull/1/head");
     System.out.println(hash);
     Assert.assertEquals(hash, myPrCommit);
   }
@@ -184,7 +195,7 @@ public abstract class GitHubApiTestCase extends BaseTestCase {
   @Test
   public void test_parent_hashes() throws IOException {
     enableDebug();
-    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    String hash = getPullRequestCommit("refs/pull/1/merge");
     assert hash != null;
     Collection<String> parents = getApi().getCommitParents(myRepoOwner, myRepoName, hash);
     System.out.println(parents);

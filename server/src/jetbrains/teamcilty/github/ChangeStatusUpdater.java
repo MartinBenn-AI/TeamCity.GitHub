@@ -23,8 +23,10 @@ import jetbrains.buildServer.serverSide.executors.ExecutorServices;
 import jetbrains.buildServer.util.ExceptionUtil;
 import jetbrains.buildServer.util.StringUtil;
 import jetbrains.teamcilty.github.api.*;
+import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
 import jetbrains.teamcilty.github.ui.UpdateChangeStatusFeature;
 import jetbrains.teamcilty.github.ui.UpdateChangesConstants;
+import jetbrains.teamcilty.github.util.GitHubApiGetter;
 import jetbrains.teamcilty.github.util.LoggerHelper;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -55,35 +57,12 @@ public class ChangeStatusUpdater {
   }
 
   @NotNull
-  private GitHubApi getGitHubApi(@NotNull final SBuildFeatureDescriptor feature) {
-    final String serverUrl = feature.getParameters().get(C.getServerKey());
-    if (serverUrl == null || StringUtil.isEmptyOrSpaces(serverUrl)) {
-      throw new IllegalArgumentException("Failed to read GitHub URL from the feature settings");
-    }
-
-    final GitHubApiAuthenticationType authenticationType = GitHubApiAuthenticationType.parse(feature.getParameters().get(C.getAuthenticationTypeKey()));
-    switch (authenticationType) {
-      case PASSWORD_AUTH:
-        final String username = feature.getParameters().get(C.getUserNameKey());
-        final String password = feature.getParameters().get(C.getPasswordKey());
-        return myFactory.openGitHubForUser(serverUrl, username, password);
-
-      case TOKEN_AUTH:
-        final String token = feature.getParameters().get(C.getAccessTokenKey());
-        return myFactory.openGitHubForToken(serverUrl, token);
-
-      default:
-        throw new IllegalArgumentException("Failed to parse authentication type:" + authenticationType);
-    }
-  }
-
-  @NotNull
   public Handler getUpdateHandler(@NotNull final SBuildFeatureDescriptor feature) {
     if (!feature.getType().equals(UpdateChangeStatusFeature.FEATURE_TYPE)) {
       throw new IllegalArgumentException("Unexpected feature type " + feature.getType());
     }
 
-    final GitHubApi api = getGitHubApi(feature);
+    final GitHubApi api = GitHubApiGetter.getGitHubApi(feature, C, myFactory);
 
     final String repositoryOwner = feature.getParameters().get(C.getRepositoryOwnerKey());
     final String repositoryName = feature.getParameters().get(C.getRepositoryNameKey());
@@ -213,11 +192,12 @@ public class ChangeStatusUpdater {
             if (vcsBranch != null && api.isPullRequestMergeBranch(vcsBranch)) {
               try {
                 final PullRequestInfo pullRequestInfo = api.findPullRequestCommit(repositoryOwner, repositoryName, vcsBranch);
-                final String hash = pullRequestInfo.head.sha;
-
-                if (hash == null) {
+                if (pullRequestInfo == null || pullRequestInfo.head == null || pullRequestInfo.head.sha == null) {
                   throw new IOException("Failed to find head hash for commit from " + vcsBranch);
                 }
+
+                final String hash = pullRequestInfo.head.sha;
+
                 LOG.info("Resolved GitHub change commit for " + vcsBranch + " to point to pull request head for " +
                         "hash: " + version.getVersion() + ", " +
                         "newHash: " + hash + ", " +

@@ -2,8 +2,10 @@ package jetbrains.teamcilty.github.util;
 
 import com.intellij.openapi.diagnostic.Logger;
 import jetbrains.buildServer.serverSide.*;
+import jetbrains.buildServer.util.StringUtil;
 import jetbrains.teamcilty.github.ChangeStatusListener;
 import jetbrains.teamcilty.github.api.GitHubApi;
+import jetbrains.teamcilty.github.api.GitHubApiAuthenticationType;
 import jetbrains.teamcilty.github.api.GitHubApiFactory;
 import jetbrains.teamcilty.github.api.impl.GitHubApiFactoryImpl;
 import jetbrains.teamcilty.github.api.impl.HttpClientWrapperImpl;
@@ -69,6 +71,8 @@ public class BuildParametersPreprocessor implements ParametersPreprocessor {
     return null;
   }
 
+
+
   private String getLabelFromGitHub(SBuildFeatureDescriptor feature, String branchSpec) {
     try {
       HttpClientWrapperImpl clientWrapper = new HttpClientWrapperImpl();
@@ -77,10 +81,7 @@ public class BuildParametersPreprocessor implements ParametersPreprocessor {
 
       final UpdateChangesConstants c = new UpdateChangesConstants();
 
-      final GitHubApi api = myFactory.openGitHub(
-              feature.getParameters().get(c.getServerKey()),
-              feature.getParameters().get(c.getUserNameKey()),
-              feature.getParameters().get(c.getPasswordKey()));
+      final GitHubApi api = GitHubApiGetter.getGitHubApi(feature, c, myFactory);
 
       final String repositoryOwner = feature.getParameters().get(c.getRepositoryOwnerKey());
       final String repositoryName = feature.getParameters().get(c.getRepositoryNameKey());

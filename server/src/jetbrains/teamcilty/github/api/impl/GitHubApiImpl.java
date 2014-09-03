@@ -154,12 +154,7 @@ public abstract class GitHubApiImpl implements GitHubApi {
     includeAuthentication(get);
     setDefaultHeaders(get);
 
-    final PullRequestInfo pullRequestInfo = processResponse(get, PullRequestInfo.class);
-
-    if (pullRequestInfo != null) {
-      return pullRequestInfo;
-    }
-    return null;
+    return processResponse(get, PullRequestInfo.class);
   }
 
   @NotNull
