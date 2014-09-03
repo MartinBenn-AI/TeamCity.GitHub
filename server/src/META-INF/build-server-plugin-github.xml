@@ -17,4 +17,5 @@
   <bean class="jetbrains.teamcilty.github.api.impl.HttpClientWrapperImpl" destroy-method="dispose"/>
 
   <bean class="jetbrains.teamcilty.github.util.BuildParametersPreprocessor"/>
+  <bean class="jetbrains.teamcilty.github.GitHubUsageStatisticsProvider"/>
 </beans>

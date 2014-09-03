@@ -16,13 +16,22 @@
 
 package jetbrains.teamcilty.github.api.impl;
 
+import com.intellij.openapi.diagnostic.Logger;
 import jetbrains.buildServer.serverSide.TeamCityProperties;
+import jetbrains.buildServer.util.StringUtil;
 import jetbrains.buildServer.version.ServerVersionHolder;
+import jetbrains.teamcilty.github.util.LoggerHelper;
+import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.Credentials;
+import org.apache.http.auth.NTCredentials;
+import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.client.protocol.RequestAcceptEncoding;
 import org.apache.http.client.protocol.ResponseContentEncoding;
+import org.apache.http.conn.params.ConnRoutePNames;
 import org.apache.http.conn.scheme.Scheme;
 import org.apache.http.conn.scheme.SchemeRegistry;
 import org.apache.http.conn.ssl.SSLSocketFactory;
@@ -52,6 +61,8 @@ import java.security.cert.X509Certificate;
  * Date: 11.08.11 16:24
  */
 public class HttpClientWrapperImpl implements HttpClientWrapper {
+  private final Logger LOG = LoggerHelper.getInstance(getClass());
+
   private final HttpClient myClient;
 
   public HttpClientWrapperImpl() throws UnrecoverableKeyException, NoSuchAlgorithmException, KeyStoreException, KeyManagementException {
@@ -60,8 +71,9 @@ public class HttpClientWrapperImpl implements HttpClientWrapper {
     final HttpParams ps = new BasicHttpParams();
 
     DefaultHttpClient.setDefaultHttpParams(ps);
-    HttpConnectionParams.setConnectionTimeout(ps, 300 * 1000);
-    HttpConnectionParams.setSoTimeout(ps, 300 * 1000);
+    final int timeout = TeamCityProperties.getInteger("teamcity.github.http.timeout", 300 * 1000);
+    HttpConnectionParams.setConnectionTimeout(ps, timeout);
+    HttpConnectionParams.setSoTimeout(ps, timeout);
     HttpProtocolParams.setUserAgent(ps, "JetBrains TeamCity " + serverVersion);
 
     final SchemeRegistry schemaRegistry = SchemeRegistryFactory.createDefault();
@@ -74,6 +86,8 @@ public class HttpClientWrapperImpl implements HttpClientWrapper {
 
     final DefaultHttpClient httpclient = new DefaultHttpClient(new ThreadSafeClientConnManager(schemaRegistry), ps);
 
+    setupProxy(httpclient);
+
     httpclient.setRoutePlanner(new ProxySelectorRoutePlanner(
             httpclient.getConnectionManager().getSchemeRegistry(),
             ProxySelector.getDefault()));
@@ -82,6 +96,38 @@ public class HttpClientWrapperImpl implements HttpClientWrapper {
     httpclient.setHttpRequestRetryHandler(new DefaultHttpRequestRetryHandler(3, true));
 
     myClient = httpclient;
+  }
+
+  private void setupProxy(DefaultHttpClient httpclient) {
+    final String httpProxy = TeamCityProperties.getProperty("teamcity.github.http.proxy.host");
+    if (StringUtil.isEmptyOrSpaces(httpProxy)) return;
+
+    final int httpProxyPort = TeamCityProperties.getInteger("teamcity.github.http.proxy.port", -1);
+    if (httpProxyPort <= 0) return;
+
+    LOG.info("TeamCity.GitHub will use proxy: " + httpProxy + ", port " + httpProxyPort);
+    httpclient.getParams().setParameter(ConnRoutePNames.DEFAULT_PROXY, new HttpHost(httpProxy, httpProxyPort));
+
+    final String httpProxyUser = TeamCityProperties.getProperty("teamcity.github.http.proxy.user");
+    final String httpProxyPassword = TeamCityProperties.getProperty("teamcity.github.http.proxy.password");
+    final String httpProxyDomain = TeamCityProperties.getProperty("teamcity.github.http.proxy.domain");
+    final String httpProxyWorkstation = TeamCityProperties.getProperty("teamcity.github.http.proxy.workstation");
+
+    if (StringUtil.isEmptyOrSpaces(httpProxyUser) || StringUtil.isEmptyOrSpaces(httpProxyPassword)) return;
+
+    final Credentials creds;
+    if (StringUtil.isEmptyOrSpaces(httpProxyDomain) || StringUtil.isEmptyOrSpaces(httpProxyWorkstation)) {
+      LOG.info("TeamCity.GitHub will use proxy credentials: " + httpProxyUser);
+      creds = new UsernamePasswordCredentials(httpProxyUser, httpProxyPassword);
+    } else {
+      LOG.info("TeamCity.GitHub will use proxy NT credentials: " + httpProxyDomain + "/" + httpProxyUser);
+      creds = new NTCredentials(httpProxyUser, httpProxyPassword, httpProxyWorkstation, httpProxyDomain);
+    }
+
+    httpclient.getCredentialsProvider().setCredentials(
+            new AuthScope(httpProxy, httpProxyPort),
+            creds
+    );
   }
 
   @NotNull

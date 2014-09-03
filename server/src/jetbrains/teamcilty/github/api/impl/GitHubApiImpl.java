@@ -21,21 +21,16 @@ import com.intellij.openapi.diagnostic.Logger;
 import jetbrains.buildServer.util.FileUtil;
 import jetbrains.teamcilty.github.api.GitHubApi;
 import jetbrains.teamcilty.github.api.GitHubChangeState;
-import jetbrains.teamcilty.github.api.impl.data.CommitInfo;
-import jetbrains.teamcilty.github.api.impl.data.CommitStatus;
-import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
-import jetbrains.teamcilty.github.api.impl.data.RepoInfo;
+import jetbrains.teamcilty.github.api.impl.data.*;
 import jetbrains.teamcilty.github.util.LoggerHelper;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthenticationException;
-import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.util.EntityUtils;
 import org.jetbrains.annotations.NotNull;
@@ -53,27 +48,40 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Created by Eugene Petrenko (eugene.petrenko@gmail.com)
- * Date: 05.09.12 23:39
+ * @author Eugene Petrenko (eugene.petrenko@gmail.com)
+ * @author Tomaz Cerar
+ *         Date: 05.09.12 23:39
  */
-public class GitHubApiImpl implements GitHubApi {
+public abstract class GitHubApiImpl implements GitHubApi {
   private static final Logger LOG = LoggerHelper.getInstance(GitHubApiImpl.class);
+  private static final Pattern PULL_REQUEST_BRANCH = Pattern.compile("/?refs/pull/(\\d+)/(.*)");
 
-  @NotNull
   private final HttpClientWrapper myClient;
-  private final Gson myGson = new Gson();
   private final GitHubApiPaths myUrls;
-  private final String myUserName;
-  private final String myPassword;
+  private final Gson myGson = new Gson();
 
   public GitHubApiImpl(@NotNull final HttpClientWrapper client,
-                       @NotNull final GitHubApiPaths urls,
-                       @NotNull final String userName,
-                       @NotNull final String password) {
+                       @NotNull final GitHubApiPaths urls
+  ) {
     myClient = client;
     myUrls = urls;
-    myUserName = userName;
-    myPassword = password;
+  }
+
+  @Nullable
+  private static String getPullRequestId(@NotNull String repoName,
+                                         @NotNull String branchName) {
+    final Matcher matcher = PULL_REQUEST_BRANCH.matcher(branchName);
+    if (!matcher.matches()) {
+      LOG.debug("Branch " + branchName + " for repo " + repoName + " does not look like pull request");
+      return null;
+    }
+
+    final String pullRequestId = matcher.group(1);
+    if (pullRequestId == null) {
+      LOG.debug("Branch " + branchName + " for repo " + repoName + " does not contain pull request id");
+      return null;
+    }
+    return pullRequestId;
   }
 
   public String readChangeStatus(@NotNull final String repoOwner,
@@ -81,18 +89,25 @@ public class GitHubApiImpl implements GitHubApi {
                                  @NotNull final String hash) throws IOException {
     final HttpGet post = new HttpGet(myUrls.getStatusUrl(repoOwner, repoName, hash));
     includeAuthentication(post);
-    post.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+    setDefaultHeaders(post);
 
     try {
+      logRequest(post, null);
+
       final HttpResponse execute = myClient.execute(post);
       if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_OK) {
-        logFailedRequest(post, null, execute);
+        logFailedResponse(post, null, execute);
         throw new IOException("Failed to complete request to GitHub. Status: " + execute.getStatusLine());
       }
       return "TBD";
     } finally {
       post.abort();
     }
+  }
+
+  private void setDefaultHeaders(@NotNull HttpUriRequest request) {
+    request.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+    request.setHeader(new BasicHeader(HttpHeaders.ACCEPT, "application/json"));
   }
 
   public void setChangeStatus(@NotNull final String repoOwner,
@@ -106,19 +121,18 @@ public class GitHubApiImpl implements GitHubApi {
     try {
       post.setEntity(requestEntity);
       includeAuthentication(post);
-      post.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+      setDefaultHeaders(post);
 
+      logRequest(post, requestEntity.getText());
       final HttpResponse execute = myClient.execute(post);
       if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CREATED) {
-        logFailedRequest(post, requestEntity.getText(), execute);
+        logFailedResponse(post, requestEntity.getText(), execute);
         throw new IOException("Failed to complete request to GitHub. Status: " + execute.getStatusLine());
       }
     } finally {
       post.abort();
     }
   }
-
-  private static final Pattern PULL_REQUEST_BRANCH = Pattern.compile("/?refs/pull/(\\d+)/(.*)");
 
   public boolean isPullRequestMergeBranch(@NotNull String branchName) {
     final Matcher match = PULL_REQUEST_BRANCH.matcher(branchName);
@@ -130,25 +144,15 @@ public class GitHubApiImpl implements GitHubApi {
                                       @NotNull String repoName,
                                       @NotNull String branchName) throws IOException {
 
-    final Matcher matcher = PULL_REQUEST_BRANCH.matcher(branchName);
-    if (!matcher.matches()) {
-      LOG.debug("Branch " + branchName + " for repo " + repoName + " does not look like pull request");
-      return null;
-    }
-
-    final String pullRequestId = matcher.group(1);
-    if (pullRequestId == null) {
-      LOG.debug("Branch " + branchName + " for repo " + repoName + " does not contain pull request id");
-      return null;
-    }
+    final String pullRequestId = getPullRequestId(repoName, branchName);
+    if (pullRequestId == null) return null;
 
     //  /repos/:owner/:repo/pulls/:number
 
     final String requestUrl = myUrls.getPullRequestInfo(repoOwner, repoName, pullRequestId);
     final HttpGet get = new HttpGet(requestUrl);
     includeAuthentication(get);
-    get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
-    get.setHeader(new BasicHeader(HttpHeaders.ACCEPT, "application/json"));
+    setDefaultHeaders(get);
 
     final PullRequestInfo pullRequestInfo = processResponse(get, PullRequestInfo.class);
 
@@ -180,18 +184,19 @@ public class GitHubApiImpl implements GitHubApi {
 
   @NotNull
   private <T> T processResponse(@NotNull HttpUriRequest request, @NotNull final Class<T> clazz) throws IOException {
-    request.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
-    request.setHeader(new BasicHeader(HttpHeaders.ACCEPT, "application/json"));
+    setDefaultHeaders(request);
     try {
+      logRequest(request, null);
+
       final HttpResponse execute = myClient.execute(request);
       if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_OK) {
-        logFailedRequest(request, null, execute);
+        logFailedResponse(request, null, execute);
         throw new IOException("Failed to complete request to GitHub. Status: " + execute.getStatusLine());
       }
 
       final HttpEntity entity = execute.getEntity();
       if (entity == null) {
-        logFailedRequest(request, null, execute);
+        logFailedResponse(request, null, execute);
         throw new IOException("Failed to complete request to GitHub. Empty response. Status: " + execute.getStatusLine());
       }
 
@@ -211,15 +216,18 @@ public class GitHubApiImpl implements GitHubApi {
 
   private void includeAuthentication(@NotNull HttpRequest request) throws IOException {
     try {
-      request.addHeader(new BasicScheme().authenticate(new UsernamePasswordCredentials(myUserName, myPassword), request));
+      setAuthentication(request);
     } catch (AuthenticationException e) {
       throw new IOException("Failed to set authentication for request. " + e.getMessage(), e);
     }
   }
 
-  private void logFailedRequest(@NotNull HttpUriRequest requestUrl,
-                                @Nullable String requestEntity,
-                                @NotNull HttpResponse execute) throws IOException {
+  protected abstract void setAuthentication(@NotNull final HttpRequest request) throws AuthenticationException;
+
+
+  private void logFailedResponse(@NotNull HttpUriRequest request,
+                                 @Nullable String requestEntity,
+                                 @NotNull HttpResponse execute) throws IOException {
     String responseText = extractResponseEntity(execute);
     if (responseText == null) {
       responseText = "<none>";
@@ -228,12 +236,27 @@ public class GitHubApiImpl implements GitHubApi {
       requestEntity = "<none>";
     }
 
-    LOG.debug("Failed to complete query to GitHub with:\n" +
-            "  requestURL: " + requestUrl.getURI().toString() + "\n" +
-            "  requestMethod: " + requestUrl.getMethod() + "\n" +
+    LOG.warn("Failed to complete query to GitHub with:\n" +
+            "  requestURL: " + request.getURI().toString() + "\n" +
+            "  requestMethod: " + request.getMethod() + "\n" +
             "  requestEntity: " + requestEntity + "\n" +
             "  response: " + execute.getStatusLine() + "\n" +
             "  responseEntity: " + responseText
+    );
+  }
+
+  private void logRequest(@NotNull HttpUriRequest request,
+                          @Nullable String requestEntity) throws IOException {
+    if (!LOG.isDebugEnabled()) return;
+
+    if (requestEntity == null) {
+      requestEntity = "<none>";
+    }
+
+    LOG.debug("Calling GitHub with:\n" +
+            "  requestURL: " + request.getURI().toString() + "\n" +
+            "  requestMethod: " + request.getMethod() + "\n" +
+            "  requestEntity: " + requestEntity
     );
   }
 
@@ -252,6 +275,31 @@ public class GitHubApiImpl implements GitHubApi {
       }
     } finally {
       EntityUtils.consume(responseEntity);
+    }
+  }
+
+  public void postComment(@NotNull final String ownerName,
+                          @NotNull final String repoName,
+                          @NotNull final String hash,
+                          @NotNull final String comment) throws IOException {
+
+    final String requestUrl = myUrls.getAddCommentUrl(ownerName, repoName, hash);
+    final GSonEntity requestEntity = new GSonEntity(myGson, new IssueComment(comment));
+    final HttpPost post = new HttpPost(requestUrl);
+    try {
+      post.setEntity(requestEntity);
+      includeAuthentication(post);
+      setDefaultHeaders(post);
+
+      logRequest(post, requestEntity.getText());
+
+      final HttpResponse execute = myClient.execute(post);
+      if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CREATED) {
+        logFailedResponse(post, requestEntity.getText(), execute);
+        throw new IOException("Failed to complete request to GitHub. Status: " + execute.getStatusLine());
+      }
+    } finally {
+      post.abort();
     }
   }
 }

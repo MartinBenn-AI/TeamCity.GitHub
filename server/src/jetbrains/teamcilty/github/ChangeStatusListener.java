@@ -43,12 +43,17 @@ public class ChangeStatusListener {
     myUpdater = updater;
     listener.addListener(new BuildServerAdapter(){
       @Override
-      public void changesLoaded(SRunningBuild build) {
+      public void changesLoaded(@NotNull final SRunningBuild build) {
         updateBuildStatus(build, true);
       }
 
       @Override
-      public void buildFinished(SRunningBuild build) {
+      public void buildInterrupted(@NotNull final SRunningBuild build) {
+        updateBuildStatus(build, false);
+      }
+
+      @Override
+      public void buildFinished(@NotNull final SRunningBuild build) {
         updateBuildStatus(build, false);
       }
     });
@@ -58,7 +63,7 @@ public class ChangeStatusListener {
     SBuildType bt = build.getBuildType();
     if (bt == null) return;
 
-    for (SBuildFeatureDescriptor feature : bt.getBuildFeatures()) {
+    for (SBuildFeatureDescriptor feature : bt.getResolvedSettings().getBuildFeatures()) {
       if (!feature.getType().equals(UpdateChangeStatusFeature.FEATURE_TYPE)) continue;
 
       final Handler h = myUpdater.getUpdateHandler(feature);

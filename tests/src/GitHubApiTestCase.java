@@ -17,12 +17,11 @@
 import com.intellij.openapi.util.io.FileUtil;
 import jetbrains.buildServer.BaseTestCase;
 import jetbrains.buildServer.util.PropertiesUtil;
+import jetbrains.buildServer.util.StringUtil;
 import jetbrains.teamcilty.github.api.GitHubApi;
+import jetbrains.teamcilty.github.api.GitHubApiFactory;
 import jetbrains.teamcilty.github.api.GitHubChangeState;
-import jetbrains.teamcilty.github.api.impl.GitHubApiImpl;
-import jetbrains.teamcilty.github.api.impl.GitHubApiPaths;
-import jetbrains.teamcilty.github.api.impl.HttpClientWrapperImpl;
-import jetbrains.teamcilty.github.api.impl.data.PullRequestInfo;
+import jetbrains.teamcilty.github.api.impl.*;
 import org.apache.http.auth.AuthenticationException;
 import org.jetbrains.annotations.NotNull;
 import org.testng.Assert;
@@ -38,15 +37,19 @@ import java.util.Properties;
  * Created by Eugene Petrenko (eugene.petrenko@gmail.com)
  * Date: 05.09.12 23:51
  */
-public class GitHubApiTest extends BaseTestCase {
-  private static final String URL = "URL";
-  private static final String USERNAME = "username";
-  private static final String REPOSITORY = "repository";
-  private static final String OWNER = "owner";
-  private static final String PASSWORD_REV = "password-rev";
+public abstract class GitHubApiTestCase extends BaseTestCase {
+  public static final String URL = "URL";
+  public static final String USERNAME = "username";
+  public static final String REPOSITORY = "repository";
+  public static final String OWNER = "owner";
+  public static final String PASSWORD_REV = "password-rev";
+  public static final String PR_COMMIT = "prcommit";
+  public static final String ACCESS_TOKEN = "githubtoken";
+
   private GitHubApi myApi;
   private String myRepoName;
   private String myRepoOwner;
+  private String myPrCommit;
 
   @BeforeMethod
   @Override
@@ -59,14 +62,24 @@ public class GitHubApiTest extends BaseTestCase {
     myRepoName = ps.getProperty(REPOSITORY);
     myRepoOwner = ps.getProperty(OWNER, user);
 
-    myApi = new GitHubApiImpl(
-            new HttpClientWrapperImpl(),
-            new GitHubApiPaths(ps.getProperty(URL)),
-            user,
-            rewind(ps.getProperty(PASSWORD_REV)));
+    final GitHubApiFactory factory = new GitHubApiFactoryImpl(new HttpClientWrapperImpl());
+
+    myApi = createApi(ps, factory);
+
+
+    myPrCommit = ps.getProperty(PR_COMMIT);
   }
 
-  private static String rewind(String s) {
+  @NotNull
+  protected abstract GitHubApi createApi(@NotNull final Properties ps, @NotNull final GitHubApiFactory factory);
+
+  @NotNull
+  protected GitHubApi getApi() {
+    return myApi;
+  }
+
+  @NotNull
+  protected static String rewind(@NotNull final String s) {
     StringBuilder sb = new StringBuilder();
     for (char c : s.toCharArray()) {
       sb.insert(0, c);
@@ -78,14 +91,15 @@ public class GitHubApiTest extends BaseTestCase {
    * It's not possible to store username/password in the test file,
    * this cretentials are stored in a properties file
    * under user home directory.
-   *
+   * <p/>
    * This method would be used to fetch parameters for the test
    * and allow to avoid committing createntials with source file.
+   *
    * @return username, repo, password
    */
   @NotNull
   public static Properties readGitHubAccount() {
-    File propsFile = new File(System.getenv("USERPROFILE"), ".github.test.account");
+    File propsFile = new File(System.getProperty("user.home"), ".github.test.account");
     System.out.println("Loading properites from: " + propsFile);
     try {
       if (!propsFile.exists()) {
@@ -95,6 +109,8 @@ public class GitHubApiTest extends BaseTestCase {
         ps.setProperty(USERNAME, "jonnyzzz");
         ps.setProperty(REPOSITORY, "TeamCity.GitHub");
         ps.setProperty(PASSWORD_REV, rewind("some-password-written-end-to-front"));
+        ps.setProperty(PR_COMMIT, "4e86fc6dcef23c733f36bc8bbf35fb292edc9cdb");
+        ps.setProperty(ACCESS_TOKEN, "insert a github personal access token here");
         PropertiesUtil.storeProperties(ps, propsFile, "mock properties");
         return ps;
       } else {
@@ -107,12 +123,17 @@ public class GitHubApiTest extends BaseTestCase {
 
   @Test
   public void test_read_status() throws IOException {
-    myApi.readChangeStatus(myRepoOwner, myRepoName, "605e36e23f7a64515691da631190baaf45fdaed9");
+    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    assert hash != null;
+    String change = getApi().readChangeStatus(myRepoOwner, myRepoName, hash);
+    System.out.println(change);
   }
 
   @Test
   public void test_set_status() throws IOException, AuthenticationException {
-    myApi.setChangeStatus(myRepoOwner, myRepoName, "605e36e23f7a64515691da631190baaf45fdaed9",
+    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    assert hash != null;
+    getApi().setChangeStatus(myRepoOwner, myRepoName, hash,
             GitHubChangeState.Pending,
             "http://teamcity.jetbrains.com",
             "test status"
@@ -120,31 +141,40 @@ public class GitHubApiTest extends BaseTestCase {
   }
 
   @Test
+  public void test_set_longer_status() throws IOException, AuthenticationException {
+    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    assert hash != null;
+    getApi().setChangeStatus(myRepoOwner, myRepoName, hash,
+            GitHubChangeState.Pending,
+            "http://teamcity.jetbrains.com",
+            "test status" + StringUtil.repeat("test", " ", 1000)
+    );
+  }
+
+  @Test
   public void test_resolve_pull_request() throws IOException {
-    PullRequestInfo pullRequestInfo = myApi.findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
-    String hash = pullRequestInfo.base.sha;
+    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
     System.out.println(hash);
-    Assert.assertEquals(hash, "4e86fc6dcef23c733f36bc8bbf35fb292edc9cdb");
+    Assert.assertEquals(hash, myPrCommit);
   }
 
   @Test
   public void test_resolve_pull_request_2() throws IOException {
-    PullRequestInfo pullRequestInfo = myApi.findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
-    String hash = pullRequestInfo.base.sha;
+    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/head");
     System.out.println(hash);
-    Assert.assertEquals(hash, "4e86fc6dcef23c733f36bc8bbf35fb292edc9cdb");
+    Assert.assertEquals(hash, myPrCommit);
   }
 
   @Test
   public void test_is_merge_pull() {
-    Assert.assertTrue(myApi.isPullRequestMergeBranch("refs/pull/42/merge"));
-    Assert.assertFalse(myApi.isPullRequestMergeBranch("refs/pull/42/head"));
+    Assert.assertTrue(getApi().isPullRequestMergeBranch("refs/pull/42/merge"));
+    Assert.assertFalse(getApi().isPullRequestMergeBranch("refs/pull/42/head"));
   }
 
   @Test(expectedExceptions = IOException.class)
   public void test_set_status_failure() throws IOException, AuthenticationException {
     enableDebug();
-    myApi.setChangeStatus(myRepoOwner, myRepoName, "wrong_hash",
+    getApi().setChangeStatus(myRepoOwner, myRepoName, "wrong_hash",
             GitHubChangeState.Pending,
             "http://teamcity.jetbrains.com",
             "test status"
@@ -154,7 +184,9 @@ public class GitHubApiTest extends BaseTestCase {
   @Test
   public void test_parent_hashes() throws IOException {
     enableDebug();
-    Collection<String> parents = myApi.getCommitParents(myRepoOwner, myRepoName, "4664d7fa1b9fa71ea7c7958c126a05ea5d0d64f9");
+    String hash = getApi().findPullRequestCommit(myRepoOwner, myRepoName, "refs/pull/1/merge");
+    assert hash != null;
+    Collection<String> parents = getApi().getCommitParents(myRepoOwner, myRepoName, hash);
     System.out.println(parents);
   }
 }

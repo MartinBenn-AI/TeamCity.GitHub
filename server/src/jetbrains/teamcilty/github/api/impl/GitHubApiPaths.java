@@ -52,4 +52,11 @@ public class GitHubApiPaths {
     return myUrl + "/repos/" + repoOwner + "/" + repoName + "/pulls/" + pullRequestId;
   }
 
+  @NotNull
+  public String getAddCommentUrl(@NotNull final String ownerName,
+                                 @NotNull final String repoName,
+                                 @NotNull final String hash) {
+    ///repos/:owner/:repo/commits/:sha/comments
+    return myUrl + "/repos/" + ownerName + "/" + repoName + "/commits/" + hash + "/comments";
+  }
 }
